@@ -5,10 +5,36 @@ import { useState, useEffect, useCallback } from "react";
    ═══════════════════════════════════════════ */
 
 const LEAGUES = {
-  nba: { name: "NBA", path: "basketball/nba", sport: "basketball" },
-  nfl: { name: "NFL", path: "football/nfl", sport: "football" },
-  mlb: { name: "MLB", path: "baseball/mlb", sport: "baseball" },
-  nhl: { name: "NHL", path: "hockey/nhl", sport: "hockey" },
+  nba: {
+    name: "NBA",
+    path: "basketball/nba",
+    sport: "basketball",
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&h=40&w=40"
+  },
+  nfl: {
+    name: "NFL",
+    path: "football/nfl",
+    sport: "football",
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&h=40&w=40"
+  },
+  mlb: {
+    name: "MLB",
+    path: "baseball/mlb",
+    sport: "baseball",
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&h=40&w=40"
+  },
+  nhl: {
+    name: "NHL",
+    path: "hockey/nhl",
+    sport: "hockey",
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nhl.png&h=40&w=40"
+  },
+  epl: {
+    name: "EPL",
+    path: "soccer/eng.1",
+    sport: "soccer",
+    logo: null
+  },
 };
 
 const API = "https://site.api.espn.com/apis/site/v2/sports";
@@ -68,13 +94,12 @@ async function apiFetch(url) {
    ═══════════════════════════════════════════ */
 
 async function fetchScores(league) {
-  // Fetch games for yesterday, today, and tomorrow
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // EPL games are less frequent, so fetch a wider range (7 days back/forward)
+  // Other sports fetch 3-day range (yesterday, today, tomorrow)
+  const daysBack = league === 'epl' ? 7 : 1;
+  const daysForward = league === 'epl' ? 7 : 1;
 
+  const today = new Date();
   const formatDate = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -82,9 +107,15 @@ async function fetchScores(league) {
     return `${year}${month}${day}`;
   };
 
-  const dates = [yesterday, today, tomorrow].map(formatDate);
+  // Generate array of dates to fetch
+  const dates = [];
+  for (let i = -daysBack; i <= daysForward; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() + i);
+    dates.push(formatDate(date));
+  }
 
-  // Fetch all three days in parallel
+  // Fetch all days in parallel
   const responses = await Promise.all(
     dates.map(date => apiFetch(`${API}/${LEAGUES[league].path}/scoreboard?dates=${date}`))
   );
@@ -169,7 +200,7 @@ async function fetchStandings(league) {
           pct: s.winPercent || "",
           gb: s.gamesBehind || "",
           streak: s.streak || "",
-          l10: s["Last Ten Games"] || "",
+          l10: s["Last Ten Games"] ? s["Last Ten Games"].split(',')[0] : "",
           otl: s.OTLosses || s.otLosses,
           pts: s.points,
           pf: s.pointsFor,
@@ -212,6 +243,8 @@ function periodLabels(league, count) {
       labels.push(i <= 4 ? `Q${i}` : i === 5 ? "OT" : `OT${i - 4}`);
     else if (league === "nfl")
       labels.push(i <= 4 ? `Q${i}` : "OT");
+    else if (league === "epl")
+      labels.push(i === 1 ? "1H" : "2H");
     else labels.push(String(i));
   }
   return labels;
@@ -227,6 +260,8 @@ function stCols(league) {
       return { h: ["W", "L", "PCT", "GB", "L10", "STRK"], k: ["w", "l", "pct", "gb", "l10", "streak"] };
     case "nhl":
       return { h: ["W", "L", "OTL", "PTS", "L10", "STRK"], k: ["w", "l", "otl", "pts", "l10", "streak"] };
+    case "epl":
+      return { h: ["W", "L", "D", "PTS", "GF", "GA", "GD"], k: ["w", "l", "d", "pts", "gf", "ga", "gd"] };
     default:
       return { h: ["W", "L"], k: ["w", "l"] };
   }
@@ -386,7 +421,7 @@ function ScoreCard({ game, league, isFav, showDate = true }) {
             <span className="sc-name">{t.short}</span>
             <span className="sc-rec">{t.record}</span>
             {mlParts && <span className="sc-ml">{mlParts[idx]}</span>}
-            <span className="sc-score">{t.score ?? "—"}</span>
+            <span className="sc-score">{game.notStarted ? "—" : (t.score ?? "—")}</span>
           </div>
         ))}
       </div>
@@ -494,6 +529,39 @@ function LeagueSection({ league, scores, standings, favorites }) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // For EPL, use specific date grouping. For other sports, use yesterday/today/tomorrow
+    if (league === 'epl') {
+      const dateGroups = {};
+      games.forEach((g) => {
+        const gameDate = new Date(g.date);
+        gameDate.setHours(0, 0, 0, 0);
+        const time = gameDate.getTime();
+
+        let key;
+        if (time === today.getTime()) {
+          key = 'TODAY';
+        } else if (time < today.getTime()) {
+          key = gameDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+        } else {
+          key = gameDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+        }
+
+        if (!dateGroups[key]) dateGroups[key] = [];
+        dateGroups[key].push(g);
+      });
+
+      // Sort groups by date
+      const sortedGroups = Object.entries(dateGroups).sort((a, b) => {
+        if (a[0] === 'TODAY') return 0;
+        if (b[0] === 'TODAY') return 0;
+        const dateA = a[1][0] ? new Date(a[1][0].date) : new Date();
+        const dateB = b[1][0] ? new Date(b[1][0].date) : new Date();
+        return dateA - dateB;
+      });
+
+      return Object.fromEntries(sortedGroups);
+    }
+
     const groups = { yesterday: [], today: [], tomorrow: [] };
 
     games.forEach((g) => {
@@ -555,18 +623,35 @@ function LeagueSection({ league, scores, standings, favorites }) {
   return (
     <section style={{ marginBottom: 36, breakInside: "avoid" }}>
       <div className="lg-header">
-        <h2 className="lg-name">{LEAGUES[league].name}</h2>
+        <h2 className="lg-name">
+          {LEAGUES[league].logo && (
+            <img src={LEAGUES[league].logo} alt={LEAGUES[league].name} className="lg-logo" />
+          )}
+          {LEAGUES[league].name}
+        </h2>
         <div className="lg-rule" />
       </div>
       {scores.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
           <h3 className="sec-label">SCOREBOARD</h3>
-          {renderDateSection("YESTERDAY", favByDate.yesterday, otherByDate.yesterday)}
-          {renderDateSection("TODAY", favByDate.today, otherByDate.today)}
-          {renderDateSection("TOMORROW", favByDate.tomorrow, otherByDate.tomorrow)}
+          {league === 'epl' ? (
+            // For EPL, render all date groups dynamically
+            Object.keys(favByDate).length > 0 || Object.keys(otherByDate).length > 0 ? (
+              [...new Set([...Object.keys(favByDate), ...Object.keys(otherByDate)])].map(dateLabel =>
+                renderDateSection(dateLabel, favByDate[dateLabel] || [], otherByDate[dateLabel] || [])
+              )
+            ) : null
+          ) : (
+            // For other sports, use standard yesterday/today/tomorrow
+            <>
+              {renderDateSection("YESTERDAY", favByDate.yesterday, otherByDate.yesterday)}
+              {renderDateSection("TODAY", favByDate.today, otherByDate.today)}
+              {renderDateSection("TOMORROW", favByDate.tomorrow, otherByDate.tomorrow)}
+            </>
+          )}
         </div>
       ) : (
-        <p className="no-games">No games scheduled in the next 3 days.</p>
+        <p className="no-games">No games scheduled in the next {league === 'epl' ? '2 weeks' : '3 days'}.</p>
       )}
       {standings.length > 0 && (
         <div>
@@ -715,7 +800,19 @@ const CSS = `
 
   /* ── League ── */
   .lg-header { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
-  .lg-name { font: 900 28px var(--serif); white-space: nowrap; }
+  .lg-name {
+    font: 900 28px var(--serif);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .lg-logo {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    filter: grayscale(100%) contrast(1.2);
+  }
   .lg-rule { flex: 1; height: 2px; background: var(--ink); }
 
   .sec-label {
@@ -793,7 +890,8 @@ const CSS = `
 
   .sc-date { font: 10px var(--mono); color: var(--mid); letter-spacing: 0.05em; margin-bottom: 4px; text-transform: uppercase; }
   .sc-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13px; }
-  .sc-won .sc-abbr, .sc-won .sc-score { font-weight: 700; }
+  .sc-won .sc-abbr, .sc-won .sc-score { font-weight: 900; }
+  .sc-won .sc-name { font-weight: 600; }
   .sc-abbr { font: 600 12px var(--mono); width: 36px; }
   .sc-name { flex: 1; }
   .sc-rec { font: 10px var(--mono); color: var(--mid); }
@@ -876,18 +974,40 @@ const CSS = `
   @media print {
     .no-print { display: none !important; }
     body { background: #fff; font-size: 11px; }
-    .app { max-width: 100%; padding: 10px; }
-    .mast { font-size: 36px; }
-    .sc { border: 1px solid #999; break-inside: avoid; }
+    .app { max-width: 100%; padding: 0; }
+
+    /* Compact header for print */
+    header { margin-bottom: 10px; page-break-after: avoid; }
+    .thick-rule { height: 1px; margin: 1px 0; }
+    .header-meta { padding: 1px 0; font-size: 7px; }
+    .mast { font-size: 18px; margin: 2px 0 1px 0; letter-spacing: -0.02em; line-height: 1; }
+    .tagline { display: none; }
+
+    /* Optimize spacing */
+    section { page-break-inside: auto; }
+    .lg-header { margin-bottom: 8px; gap: 8px; page-break-after: avoid; }
+    .lg-name { font-size: 18px; }
+    .lg-logo { width: 20px; height: 20px; }
+    .sec-label { margin-bottom: 5px; padding-bottom: 2px; font-size: 9px; }
+    .date-header { padding: 3px 6px; margin-bottom: 5px; font-size: 9px; page-break-after: avoid; }
+
+    /* Score cards */
+    .sc { border: 1px solid #999; break-inside: avoid; padding: 8px 10px; }
     .sc-fav { border: 2px solid #333; }
     .scores-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
     .fav-grid { grid-template-columns: repeat(2, 1fr); }
+
+    /* Standings */
     .st-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .st-table { font-size: 9px; }
     .st-table td, .st-table th { padding: 2px 3px; }
     .st-logo { width: 12px; height: 12px; }
+
+    /* Footer */
+    .footer { margin-top: 16px; padding-top: 8px; font-size: 8px; }
+
     .live-badge { animation: none; }
-    @page { margin: 0.5in; }
+    @page { margin: 0.75in; }
   }
 
   /* ── Responsive ── */
@@ -917,7 +1037,7 @@ export default function App() {
   const [activeLeagues, setActiveLeagues] = useState(
     () =>
       URL_PARAMS.leagues ||
-      store.get("active_leagues") || ["nba", "nfl", "mlb", "nhl"]
+      store.get("active_leagues") || ["nba", "nfl", "mlb", "nhl", "epl"]
   );
   const [lastRefresh, setLastRefresh] = useState(null);
 
