@@ -196,7 +196,8 @@ async function fetchStandings(league) {
           w: s.wins || "0",
           l: s.losses || "0",
           t: s.ties,
-          d: s.draws,
+          d: s.ties || s.draws,
+          mp: s.gamesPlayed,
           pct: s.winPercent || "",
           gb: s.gamesBehind || "",
           streak: s.streak || "",
@@ -212,7 +213,7 @@ async function fetchStandings(league) {
         };
       })
       .sort((a, b) => {
-        if (league === "nhl" && a.pts && b.pts)
+        if ((league === "nhl" || league === "epl") && a.pts && b.pts)
           return parseInt(b.pts) - parseInt(a.pts);
         return (
           (parseFloat(b.pct) || 0) - (parseFloat(a.pct) || 0) ||
@@ -261,7 +262,7 @@ function stCols(league) {
     case "nhl":
       return { h: ["W", "L", "OTL", "PTS", "L10", "STRK"], k: ["w", "l", "otl", "pts", "l10", "streak"] };
     case "epl":
-      return { h: ["W", "L", "D", "PTS", "GF", "GA", "GD"], k: ["w", "l", "d", "pts", "gf", "ga", "gd"] };
+      return { h: ["MP", "W", "D", "L", "PTS", "GF", "GA", "GD"], k: ["mp", "w", "d", "l", "pts", "gf", "ga", "gd"] };
     default:
       return { h: ["W", "L"], k: ["w", "l"] };
   }
@@ -296,7 +297,7 @@ function Header({ onSettings, headless }) {
         <span>DAILY EDITION</span>
         <span>{dateStr.toUpperCase()}</span>
       </div>
-      <h1 className="mast">THE SPORTS PAGE</h1>
+      <h1 className="mast">THE SPORTS BUGLE 📣</h1>
       <p className="tagline">Yesterday · Today · Tomorrow · Standings · Box Scores</p>
       {!headless && (
         <div className="header-actions no-print">
@@ -1133,7 +1134,7 @@ export default function App() {
         )}
 
         <div className="footer">
-          The Sports Page · {dateStr} · Data via ESPN · {" "}
+          The Sports Bugle · {dateStr} · Data via ESPN · {" "}
           {headless
             ? "Generated automatically"
             : "Auto-refreshes every 5 minutes"}
