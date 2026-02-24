@@ -68,9 +68,31 @@ async function apiFetch(url) {
    ═══════════════════════════════════════════ */
 
 async function fetchScores(league) {
-  const d = await apiFetch(`${API}/${LEAGUES[league].path}/scoreboard`);
-  if (!d?.events) return [];
-  return d.events.map((ev) => {
+  // Fetch games for yesterday, today, and tomorrow
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  };
+
+  const dates = [yesterday, today, tomorrow].map(formatDate);
+
+  // Fetch all three days in parallel
+  const responses = await Promise.all(
+    dates.map(date => apiFetch(`${API}/${LEAGUES[league].path}/scoreboard?dates=${date}`))
+  );
+
+  // Combine all events
+  const allEvents = responses.flatMap(d => d?.events || []);
+
+  return allEvents.map((ev) => {
     const c = ev.competitions?.[0];
     const teams = (c?.competitors || []).map((t) => ({
       id: t.team?.id,
@@ -99,6 +121,10 @@ async function fetchScores(league) {
       };
     }
 
+    // Extract highlights/notes
+    const headline = c?.headlines?.[0]?.shortLinkText || c?.headlines?.[0]?.description || "";
+    const note = c?.notes?.[0]?.headline || "";
+
     return {
       id: ev.id,
       name: ev.name,
@@ -110,6 +136,7 @@ async function fetchScores(league) {
       venue: c?.venue?.fullName || "",
       teams,
       odds,
+      headline: headline || note,
       leaders: (c?.leaders || []).map((cat) => ({
         category: cat.name,
         leaders: (cat.leaders || []).slice(0, 1).map((l) => ({
@@ -122,7 +149,7 @@ async function fetchScores(league) {
 }
 
 async function fetchStandings(league) {
-  const d = await apiFetch(`${API}/${LEAGUES[league].path}/standings`);
+  const d = await apiFetch(`https://site.web.api.espn.com/apis/v2/sports/${LEAGUES[league].path}/standings`);
   if (!d?.children) return [];
   return d.children.map((g) => ({
     name: g.name || g.abbreviation,
@@ -142,6 +169,7 @@ async function fetchStandings(league) {
           pct: s.winPercent || "",
           gb: s.gamesBehind || "",
           streak: s.streak || "",
+          l10: s["Last Ten Games"] || "",
           otl: s.OTLosses || s.otLosses,
           pts: s.points,
           pf: s.pointsFor,
@@ -192,13 +220,13 @@ function periodLabels(league, count) {
 function stCols(league) {
   switch (league) {
     case "nba":
-      return { h: ["W", "L", "PCT", "GB", "STRK"], k: ["w", "l", "pct", "gb", "streak"] };
+      return { h: ["W", "L", "PCT", "GB", "L10", "STRK"], k: ["w", "l", "pct", "gb", "l10", "streak"] };
     case "nfl":
       return { h: ["W", "L", "T", "PCT", "PF", "PA"], k: ["w", "l", "t", "pct", "pf", "pa"] };
     case "mlb":
-      return { h: ["W", "L", "PCT", "GB", "STRK"], k: ["w", "l", "pct", "gb", "streak"] };
+      return { h: ["W", "L", "PCT", "GB", "L10", "STRK"], k: ["w", "l", "pct", "gb", "l10", "streak"] };
     case "nhl":
-      return { h: ["W", "L", "OTL", "PTS", "STRK"], k: ["w", "l", "otl", "pts", "streak"] };
+      return { h: ["W", "L", "OTL", "PTS", "L10", "STRK"], k: ["w", "l", "otl", "pts", "l10", "streak"] };
     default:
       return { h: ["W", "L"], k: ["w", "l"] };
   }
@@ -234,7 +262,7 @@ function Header({ onSettings, headless }) {
         <span>{dateStr.toUpperCase()}</span>
       </div>
       <h1 className="mast">THE SPORTS PAGE</h1>
-      <p className="tagline">Scores · Lines · Standings · Box Scores</p>
+      <p className="tagline">Yesterday · Today · Tomorrow · Standings · Box Scores</p>
       {!headless && (
         <div className="header-actions no-print">
           <button className="btn" onClick={onSettings}>
@@ -321,22 +349,36 @@ function TeamPicker({ allTeams, favorites, setFavorites, onClose }) {
   );
 }
 
-function ScoreCard({ game, league, isFav }) {
+function ScoreCard({ game, league, isFav, showDate = true }) {
   const home = game.teams.find((t) => t.homeAway === "home");
   const away = game.teams.find((t) => t.homeAway === "away");
   if (!home || !away) return null;
+
+  // Show box scores for favorite games that are completed or live
   const showBox =
     isFav &&
-    game.completed &&
+    (game.completed || game.live) &&
     Math.max(home.linescores.length, away.linescores.length) > 0;
+
   const maxP = Math.max(home.linescores.length, away.linescores.length);
   const labels = periodLabels(league, maxP);
   const oddsLine = game.notStarted ? formatOdds(game.odds) : null;
   const mlParts = game.notStarted ? formatMoneyLine(game.odds) : null;
 
+  const gameDate = new Date(game.date);
+  const dateStr = gameDate.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  const timeStr = gameDate.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
   return (
     <div className={`sc ${game.live ? "sc-live" : ""} ${isFav ? "sc-fav" : ""}`}>
       {game.live && <span className="live-badge">● LIVE</span>}
+      {showDate && <div className="sc-date">{dateStr}</div>}
       <div style={{ marginBottom: 4 }}>
         {[away, home].map((t, idx) => (
           <div key={t.id || idx} className={`sc-row ${t.winner ? "sc-won" : ""}`}>
@@ -353,12 +395,11 @@ function ScoreCard({ game, league, isFav }) {
           ? "FINAL"
           : game.live
           ? game.detail
-          : new Date(game.date).toLocaleTimeString("en-US", {
-              hour: "numeric",
-              minute: "2-digit",
-            })}
+          : timeStr}
       </div>
       {oddsLine && <div className="sc-odds">{oddsLine}</div>}
+      {isFav && game.venue && <div className="sc-venue">{game.venue}</div>}
+      {game.headline && <div className="sc-headline">{game.headline}</div>}
       {showBox && (
         <div className="box">
           <table>
@@ -443,10 +484,73 @@ function LeagueSection({ league, scores, standings, favorites }) {
   const favIds = favorites
     .filter((f) => f.startsWith(league + ":"))
     .map((f) => f.split(":")[1]);
-  const favGames = scores.filter((g) =>
-    g.teams.some((t) => favIds.includes(t.id))
-  );
+
+  // Group games by date
+  const groupByDate = (games) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const groups = { yesterday: [], today: [], tomorrow: [] };
+
+    games.forEach((g) => {
+      const gameDate = new Date(g.date);
+      gameDate.setHours(0, 0, 0, 0);
+      const time = gameDate.getTime();
+
+      if (time === yesterday.getTime()) groups.yesterday.push(g);
+      else if (time === today.getTime()) groups.today.push(g);
+      else if (time === tomorrow.getTime()) groups.tomorrow.push(g);
+      else if (time < today.getTime()) groups.yesterday.push(g);
+      else groups.tomorrow.push(g);
+    });
+
+    return groups;
+  };
+
+  const renderDateSection = (label, favGames, otherGames) => {
+    const totalGames = favGames.length + otherGames.length;
+    if (totalGames === 0) return null;
+
+    return (
+      <div key={label} style={{ marginBottom: 14 }}>
+        <h4 className="date-header">{label}</h4>
+        {favGames.length > 0 && (
+          <>
+            {favGames.length > 0 && otherGames.length > 0 && (
+              <div className="fav-label">★ MY TEAMS</div>
+            )}
+            <div className="scores-grid fav-grid" style={{ marginBottom: favGames.length > 0 && otherGames.length > 0 ? 12 : 0 }}>
+              {favGames.map((g) => (
+                <ScoreCard key={g.id} game={g} league={league} isFav={true} showDate={false} />
+              ))}
+            </div>
+          </>
+        )}
+        {otherGames.length > 0 && (
+          <>
+            {favGames.length > 0 && otherGames.length > 0 && (
+              <div className="other-label">OTHER GAMES</div>
+            )}
+            <div className="scores-grid">
+              {otherGames.map((g) => (
+                <ScoreCard key={g.id} game={g} league={league} isFav={false} showDate={false} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const favGames = scores.filter((g) => g.teams.some((t) => favIds.includes(t.id)));
   const otherGames = scores.filter((g) => !favGames.includes(g));
+
+  const favByDate = groupByDate(favGames);
+  const otherByDate = groupByDate(otherGames);
 
   return (
     <section style={{ marginBottom: 36, breakInside: "avoid" }}>
@@ -457,26 +561,12 @@ function LeagueSection({ league, scores, standings, favorites }) {
       {scores.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
           <h3 className="sec-label">SCOREBOARD</h3>
-          {favGames.length > 0 && (
-            <div className="scores-grid fav-grid">
-              {favGames.map((g) => (
-                <ScoreCard key={g.id} game={g} league={league} isFav />
-              ))}
-            </div>
-          )}
-          {favGames.length > 0 && otherGames.length > 0 && (
-            <hr className="sec-div" />
-          )}
-          {otherGames.length > 0 && (
-            <div className="scores-grid">
-              {otherGames.map((g) => (
-                <ScoreCard key={g.id} game={g} league={league} isFav={false} />
-              ))}
-            </div>
-          )}
+          {renderDateSection("YESTERDAY", favByDate.yesterday, otherByDate.yesterday)}
+          {renderDateSection("TODAY", favByDate.today, otherByDate.today)}
+          {renderDateSection("TOMORROW", favByDate.tomorrow, otherByDate.tomorrow)}
         </div>
       ) : (
-        <p className="no-games">No games scheduled today.</p>
+        <p className="no-games">No games scheduled in the next 3 days.</p>
       )}
       {standings.length > 0 && (
         <div>
@@ -637,6 +727,31 @@ const CSS = `
     border-bottom: 1px solid var(--faint);
   }
 
+  .date-header {
+    font: 600 12px var(--mono);
+    letter-spacing: 0.12em;
+    color: var(--ink);
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: var(--bg-alt);
+    border-left: 3px solid var(--ink);
+    text-transform: uppercase;
+  }
+
+  .fav-label, .other-label {
+    font: 500 9px var(--mono);
+    letter-spacing: 0.1em;
+    color: var(--mid);
+    margin-bottom: 6px;
+    margin-top: 4px;
+    text-transform: uppercase;
+  }
+
+  .fav-label {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
   .sec-div { border: none; border-top: 1px dashed var(--faint); margin: 12px 0; }
   .no-games { font-style: italic; color: var(--mid); font-size: 13px; margin: 8px 0 16px; }
 
@@ -657,8 +772,12 @@ const CSS = `
     position: relative;
   }
 
-  .sc-fav { border-color: var(--ink); border-width: 1.5px; }
-  .sc-live { border-left: 3px solid var(--accent); }
+  .sc-fav {
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+  }
+  .sc-live { border-left: 4px solid var(--accent); }
 
   .live-badge {
     position: absolute;
@@ -672,6 +791,7 @@ const CSS = `
 
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
+  .sc-date { font: 10px var(--mono); color: var(--mid); letter-spacing: 0.05em; margin-bottom: 4px; text-transform: uppercase; }
   .sc-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13px; }
   .sc-won .sc-abbr, .sc-won .sc-score { font-weight: 700; }
   .sc-abbr { font: 600 12px var(--mono); width: 36px; }
@@ -681,6 +801,8 @@ const CSS = `
   .sc-score { font: 15px var(--mono); width: 32px; text-align: right; }
   .sc-status { font: 10px var(--mono); color: var(--mid); letter-spacing: 0.08em; text-transform: uppercase; }
   .sc-odds { font: 10px var(--mono); color: var(--accent); margin-top: 2px; letter-spacing: 0.03em; }
+  .sc-venue { font: 9px var(--mono); color: var(--mid); margin-top: 3px; letter-spacing: 0.03em; }
+  .sc-headline { font: 11px var(--body); color: var(--ink); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--faint); font-style: italic; line-height: 1.3; }
 
   /* ── Box Score ── */
   .box { margin-top: 8px; border-top: 1px solid var(--faint); padding-top: 6px; overflow-x: auto; }
