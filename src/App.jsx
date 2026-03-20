@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ═══════════════════════════════════════════
    CONFIG
@@ -1193,13 +1193,21 @@ export default function App() {
   const [activeLeagues, setActiveLeagues] = useState(
     () =>
       URL_PARAMS.leagues ||
-      store.get("active_leagues") || ["nba", "ncaam", "nfl", "mlb", "nhl", "epl"]
+      store.get("active_leagues") ||
+      Object.keys(LEAGUES)
   );
   const [lastRefresh, setLastRefresh] = useState(null);
+
+  // Track whether the user has explicitly chosen which leagues to show.
+  // If not, we auto-select only leagues that have games after data loads.
+  const userHasSetLeagues = useRef(
+    URL_PARAMS.leagues !== null || store.get("active_leagues") !== null
+  );
 
   const headless = URL_PARAMS.headless;
 
   const toggleLeague = (lg) => {
+    userHasSetLeagues.current = true;
     setActiveLeagues((prev) => {
       const next = prev.includes(lg)
         ? prev.filter((l) => l !== lg)
@@ -1217,11 +1225,18 @@ export default function App() {
       Promise.all(keys.map(async (lg) => [lg, LEAGUES[lg].noStandings ? [] : await fetchStandings(lg)])),
       Promise.all(keys.map(async (lg) => [lg, await fetchTeams(lg)])),
     ]);
-    setScores(Object.fromEntries(sc));
+    const scoreMap = Object.fromEntries(sc);
+    setScores(scoreMap);
     setStandings(Object.fromEntries(st));
     setAllTeams(Object.fromEntries(tm));
     setLoading(false);
     setLastRefresh(new Date());
+
+    // Auto-select only leagues with games when no user preference is stored
+    if (!userHasSetLeagues.current) {
+      const leaguesWithGames = keys.filter((lg) => (scoreMap[lg] || []).length > 0);
+      setActiveLeagues(leaguesWithGames.length > 0 ? leaguesWithGames : keys);
+    }
 
     // Signal to Puppeteer / automation that data is ready
     window.__SPORTS_PAGE_READY__ = true;
