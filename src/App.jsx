@@ -1126,6 +1126,19 @@ const CSS = `
     text-transform: uppercase;
   }
 
+  .footer-reset { margin-top: 10px; }
+  .footer-reset button {
+    background: none;
+    border: none;
+    color: var(--faint);
+    font: 9px var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .footer-reset button:hover { color: var(--accent); }
+
   /* ── Print ── */
   @media print {
     .no-print { display: none !important; }
@@ -1308,6 +1321,23 @@ export default function App() {
           {headless
             ? "Generated automatically"
             : "Auto-refreshes every 5 minutes"}
+          {!headless && (
+            <div className="footer-reset no-print">
+              <button
+                onClick={() => {
+                  try {
+                    localStorage.removeItem("active_leagues");
+                    localStorage.removeItem("fav_teams");
+                  } catch {}
+                  userHasSetLeagues.current = false;
+                  setFavorites([]);
+                  loadData();
+                }}
+              >
+                Reset preferences
+              </button>
+            </div>
+          )}
         </div>
 
         {showPicker && (
