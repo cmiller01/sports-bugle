@@ -9,31 +9,49 @@ const LEAGUES = {
     name: "NBA",
     path: "basketball/nba",
     sport: "basketball",
-    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&h=40&w=40"
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&h=40&w=40",
+    daysBack: 1,
+    daysForward: 1,
+  },
+  ncaam: {
+    name: "NCAA",
+    path: "basketball/mens-college-basketball",
+    sport: "basketball",
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/ncaab.png&h=40&w=40",
+    daysBack: 3,
+    daysForward: 18,
   },
   nfl: {
     name: "NFL",
     path: "football/nfl",
     sport: "football",
-    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&h=40&w=40"
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&h=40&w=40",
+    daysBack: 1,
+    daysForward: 1,
   },
   mlb: {
     name: "MLB",
     path: "baseball/mlb",
     sport: "baseball",
-    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&h=40&w=40"
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&h=40&w=40",
+    daysBack: 1,
+    daysForward: 1,
   },
   nhl: {
     name: "NHL",
     path: "hockey/nhl",
     sport: "hockey",
-    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nhl.png&h=40&w=40"
+    logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nhl.png&h=40&w=40",
+    daysBack: 1,
+    daysForward: 1,
   },
   epl: {
     name: "EPL",
     path: "soccer/eng.1",
     sport: "soccer",
-    logo: null
+    logo: null,
+    daysBack: 7,
+    daysForward: 7,
   },
 };
 
@@ -94,10 +112,8 @@ async function apiFetch(url) {
    ═══════════════════════════════════════════ */
 
 async function fetchScores(league) {
-  // EPL games are less frequent, so fetch a wider range (7 days back/forward)
-  // Other sports fetch 3-day range (yesterday, today, tomorrow)
-  const daysBack = league === 'epl' ? 7 : 1;
-  const daysForward = league === 'epl' ? 7 : 1;
+  const daysBack = LEAGUES[league].daysBack ?? 1;
+  const daysForward = LEAGUES[league].daysForward ?? 1;
 
   const today = new Date();
   const formatDate = (date) => {
@@ -135,6 +151,7 @@ async function fetchScores(league) {
       homeAway: t.homeAway,
       record: t.records?.[0]?.summary || "",
       linescores: (t.linescores || []).map((l) => l.value),
+      seed: t.curatedRank?.current || null,
     }));
 
     const oddsData = c?.odds?.[0];
@@ -156,6 +173,9 @@ async function fetchScores(league) {
     const headline = c?.headlines?.[0]?.shortLinkText || c?.headlines?.[0]?.description || "";
     const note = c?.notes?.[0]?.headline || "";
 
+    const rawRound = c?.notes?.[0]?.headline || "";
+    const round = rawRound.replace(/^NCAA\s+(?:Men['']s\s+)?(?:Basketball\s+)?Tournament\s*[-–]\s*/i, "");
+
     return {
       id: ev.id,
       name: ev.name,
@@ -167,6 +187,7 @@ async function fetchScores(league) {
       venue: c?.venue?.fullName || "",
       teams,
       odds,
+      round,
       headline: headline || note,
       leaders: (c?.leaders || []).map((cat) => ({
         category: cat.name,
@@ -246,6 +267,8 @@ function periodLabels(league, count) {
       labels.push(i <= 4 ? `Q${i}` : "OT");
     else if (league === "epl")
       labels.push(i === 1 ? "1H" : "2H");
+    else if (league === "ncaam")
+      labels.push(i <= 2 ? `H${i}` : i === 3 ? "OT" : `OT${i - 2}`);
     else labels.push(String(i));
   }
   return labels;
@@ -255,6 +278,8 @@ function stCols(league) {
   switch (league) {
     case "nba":
       return { h: ["W", "L", "PCT", "GB", "L10", "STRK"], k: ["w", "l", "pct", "gb", "l10", "streak"] };
+    case "ncaam":
+      return { h: ["W", "L", "PCT", "GB", "STRK"], k: ["w", "l", "pct", "gb", "streak"] };
     case "nfl":
       return { h: ["W", "L", "T", "PCT", "PF", "PA"], k: ["w", "l", "t", "pct", "pf", "pa"] };
     case "mlb":
@@ -418,6 +443,9 @@ function ScoreCard({ game, league, isFav, showDate = true }) {
       <div style={{ marginBottom: 4 }}>
         {[away, home].map((t, idx) => (
           <div key={t.id || idx} className={`sc-row ${t.winner ? "sc-won" : ""}`}>
+            {league === "ncaam" && t.seed ? (
+              <span className="sc-seed">#{t.seed}</span>
+            ) : null}
             <span className="sc-abbr">{t.abbr}</span>
             <span className="sc-name">{t.short}</span>
             <span className="sc-rec">{t.record}</span>
@@ -512,6 +540,97 @@ function StandingsTable({ group, league }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const BRACKET_ROUND_ORDER = [
+  "First Four",
+  "First Round",
+  "Second Round",
+  "Sweet 16",
+  "Elite Eight",
+  "Final Four",
+  "National Championship",
+];
+
+function BracketView({ games, league, favorites }) {
+  const favIds = favorites
+    .filter((f) => f.startsWith(league + ":"))
+    .map((f) => f.split(":")[1]);
+
+  const byRound = {};
+  games.forEach((g) => {
+    const r = g.round || "Tournament";
+    if (!byRound[r]) byRound[r] = [];
+    byRound[r].push(g);
+  });
+
+  const sortedRounds = Object.entries(byRound).sort(([a], [b]) => {
+    const ai = BRACKET_ROUND_ORDER.findIndex((r) =>
+      a.toLowerCase().includes(r.toLowerCase())
+    );
+    const bi = BRACKET_ROUND_ORDER.findIndex((r) =>
+      b.toLowerCase().includes(r.toLowerCase())
+    );
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  return (
+    <div>
+      {sortedRounds.map(([roundName, roundGames]) => {
+        const favGames = roundGames.filter((g) =>
+          g.teams.some((t) => favIds.includes(t.id))
+        );
+        const otherGames = roundGames.filter((g) => !favGames.includes(g));
+        return (
+          <div key={roundName} style={{ marginBottom: 16 }}>
+            <h4 className="bracket-round-name">{roundName.toUpperCase()}</h4>
+            {favGames.length > 0 && (
+              <>
+                {otherGames.length > 0 && (
+                  <div className="fav-label">★ MY TEAMS</div>
+                )}
+                <div
+                  className="scores-grid fav-grid"
+                  style={{ marginBottom: otherGames.length > 0 ? 12 : 0 }}
+                >
+                  {favGames.map((g) => (
+                    <ScoreCard
+                      key={g.id}
+                      game={g}
+                      league={league}
+                      isFav={true}
+                      showDate={false}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            {otherGames.length > 0 && (
+              <>
+                {favGames.length > 0 && (
+                  <div className="other-label">OTHER GAMES</div>
+                )}
+                <div className="scores-grid">
+                  {otherGames.map((g) => (
+                    <ScoreCard
+                      key={g.id}
+                      game={g}
+                      league={league}
+                      isFav={false}
+                      showDate={false}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -634,17 +753,54 @@ function LeagueSection({ league, scores, standings, favorites }) {
       </div>
       {scores.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
-          <h3 className="sec-label">SCOREBOARD</h3>
-          {league === 'epl' ? (
+          {league === 'ncaam' ? (() => {
+            const tourneyGames = scores.filter((g) => g.round);
+            const regularGames = scores.filter((g) => !g.round);
+            const regFavGames = regularGames.filter((g) => g.teams.some((t) => favIds.includes(t.id)));
+            const regOtherGames = regularGames.filter((g) => !regFavGames.includes(g));
+            const regFavByDate = groupByDate(regFavGames);
+            const regOtherByDate = groupByDate(regOtherGames);
+            return (
+              <>
+                {tourneyGames.length > 0 && (
+                  <>
+                    <h3 className="sec-label">NCAA TOURNAMENT</h3>
+                    <BracketView
+                      games={tourneyGames}
+                      league={league}
+                      favorites={favorites}
+                    />
+                  </>
+                )}
+                {regularGames.length > 0 && (
+                  <>
+                    <h3 className="sec-label" style={{ marginTop: tourneyGames.length > 0 ? 16 : 0 }}>
+                      OTHER GAMES
+                    </h3>
+                    {renderDateSection("YESTERDAY", regFavByDate.yesterday || [], regOtherByDate.yesterday || [])}
+                    {renderDateSection("TODAY", regFavByDate.today || [], regOtherByDate.today || [])}
+                    {renderDateSection("TOMORROW", regFavByDate.tomorrow || [], regOtherByDate.tomorrow || [])}
+                  </>
+                )}
+                {tourneyGames.length === 0 && regularGames.length === 0 && (
+                  <p className="no-games">No games scheduled.</p>
+                )}
+              </>
+            );
+          })() : league === 'epl' ? (
             // For EPL, render all date groups dynamically
-            Object.keys(favByDate).length > 0 || Object.keys(otherByDate).length > 0 ? (
-              [...new Set([...Object.keys(favByDate), ...Object.keys(otherByDate)])].map(dateLabel =>
-                renderDateSection(dateLabel, favByDate[dateLabel] || [], otherByDate[dateLabel] || [])
-              )
-            ) : null
+            <>
+              <h3 className="sec-label">SCOREBOARD</h3>
+              {Object.keys(favByDate).length > 0 || Object.keys(otherByDate).length > 0 ? (
+                [...new Set([...Object.keys(favByDate), ...Object.keys(otherByDate)])].map(dateLabel =>
+                  renderDateSection(dateLabel, favByDate[dateLabel] || [], otherByDate[dateLabel] || [])
+                )
+              ) : null}
+            </>
           ) : (
             // For other sports, use standard yesterday/today/tomorrow
             <>
+              <h3 className="sec-label">SCOREBOARD</h3>
               {renderDateSection("YESTERDAY", favByDate.yesterday, otherByDate.yesterday)}
               {renderDateSection("TODAY", favByDate.today, otherByDate.today)}
               {renderDateSection("TOMORROW", favByDate.tomorrow, otherByDate.tomorrow)}
@@ -853,6 +1009,18 @@ const CSS = `
   .sec-div { border: none; border-top: 1px dashed var(--faint); margin: 12px 0; }
   .no-games { font-style: italic; color: var(--mid); font-size: 13px; margin: 8px 0 16px; }
 
+  /* ── Bracket ── */
+  .bracket-round-name {
+    font: 700 11px var(--mono);
+    letter-spacing: 0.14em;
+    color: var(--paper);
+    background: var(--ink);
+    padding: 5px 10px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    display: inline-block;
+  }
+
   /* ── Score Cards ── */
   .scores-grid {
     display: grid;
@@ -893,6 +1061,7 @@ const CSS = `
   .sc-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13px; }
   .sc-won .sc-abbr, .sc-won .sc-score { font-weight: 900; }
   .sc-won .sc-name { font-weight: 600; }
+  .sc-seed { font: 600 9px var(--mono); color: var(--accent); width: 20px; text-align: right; flex-shrink: 0; }
   .sc-abbr { font: 600 12px var(--mono); width: 36px; }
   .sc-name { flex: 1; }
   .sc-rec { font: 10px var(--mono); color: var(--mid); }
@@ -1038,7 +1207,7 @@ export default function App() {
   const [activeLeagues, setActiveLeagues] = useState(
     () =>
       URL_PARAMS.leagues ||
-      store.get("active_leagues") || ["nba", "nfl", "mlb", "nhl", "epl"]
+      store.get("active_leagues") || ["nba", "ncaam", "nfl", "mlb", "nhl", "epl"]
   );
   const [lastRefresh, setLastRefresh] = useState(null);
 
