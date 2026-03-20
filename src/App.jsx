@@ -20,6 +20,8 @@ const LEAGUES = {
     logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/ncaab.png&h=40&w=40",
     daysBack: 3,
     daysForward: 18,
+    noStandings: true,
+    tournamentOnly: true,
   },
   nfl: {
     name: "NFL",
@@ -755,14 +757,9 @@ function LeagueSection({ league, scores, standings, favorites }) {
         <div style={{ marginBottom: 16 }}>
           {league === 'ncaam' ? (() => {
             const tourneyGames = scores.filter((g) => g.round);
-            const regularGames = scores.filter((g) => !g.round);
-            const regFavGames = regularGames.filter((g) => g.teams.some((t) => favIds.includes(t.id)));
-            const regOtherGames = regularGames.filter((g) => !regFavGames.includes(g));
-            const regFavByDate = groupByDate(regFavGames);
-            const regOtherByDate = groupByDate(regOtherGames);
             return (
               <>
-                {tourneyGames.length > 0 && (
+                {tourneyGames.length > 0 ? (
                   <>
                     <h3 className="sec-label">NCAA TOURNAMENT</h3>
                     <BracketView
@@ -771,19 +768,8 @@ function LeagueSection({ league, scores, standings, favorites }) {
                       favorites={favorites}
                     />
                   </>
-                )}
-                {regularGames.length > 0 && (
-                  <>
-                    <h3 className="sec-label" style={{ marginTop: tourneyGames.length > 0 ? 16 : 0 }}>
-                      OTHER GAMES
-                    </h3>
-                    {renderDateSection("YESTERDAY", regFavByDate.yesterday || [], regOtherByDate.yesterday || [])}
-                    {renderDateSection("TODAY", regFavByDate.today || [], regOtherByDate.today || [])}
-                    {renderDateSection("TOMORROW", regFavByDate.tomorrow || [], regOtherByDate.tomorrow || [])}
-                  </>
-                )}
-                {tourneyGames.length === 0 && regularGames.length === 0 && (
-                  <p className="no-games">No games scheduled.</p>
+                ) : (
+                  <p className="no-games">No tournament games scheduled.</p>
                 )}
               </>
             );
@@ -1228,7 +1214,7 @@ export default function App() {
     const keys = Object.keys(LEAGUES);
     const [sc, st, tm] = await Promise.all([
       Promise.all(keys.map(async (lg) => [lg, await fetchScores(lg)])),
-      Promise.all(keys.map(async (lg) => [lg, await fetchStandings(lg)])),
+      Promise.all(keys.map(async (lg) => [lg, LEAGUES[lg].noStandings ? [] : await fetchStandings(lg)])),
       Promise.all(keys.map(async (lg) => [lg, await fetchTeams(lg)])),
     ]);
     setScores(Object.fromEntries(sc));
