@@ -1015,7 +1015,7 @@ function LeagueSection({ league, scores, standings, playoffs, favorites }) {
           />
         </div>
       )}
-      {scores.length > 0 ? (
+      {playoffs && playoffs.length > 0 ? null : scores.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
           {league === 'ncaam' ? (() => {
             const tourneyGames = scores.filter((g) => g.round);
