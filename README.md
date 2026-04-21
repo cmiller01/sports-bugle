@@ -1,5 +1,7 @@
 # Sports Bugle
 
+[![CI](https://github.com/cmiller01/sports-bugle/actions/workflows/ci.yml/badge.svg)](https://github.com/cmiller01/sports-bugle/actions/workflows/ci.yml)
+
 A daily sports page — a single-page dashboard that pulls live scores, standings,
 and playoff brackets from the public ESPN API and lays them out in a
 print-friendly newspaper style.
