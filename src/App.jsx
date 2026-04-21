@@ -12,6 +12,7 @@ const LEAGUES = {
     logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&h=40&w=40",
     daysBack: 1,
     daysForward: 1,
+    playoffs: true,
   },
   ncaam: {
     name: "NCAA",
@@ -46,6 +47,7 @@ const LEAGUES = {
     logo: "https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nhl.png&h=40&w=40",
     daysBack: 1,
     daysForward: 1,
+    playoffs: true,
   },
   epl: {
     name: "EPL",
@@ -113,24 +115,103 @@ async function apiFetch(url) {
    DATA FETCHERS
    ═══════════════════════════════════════════ */
 
+function formatYMD(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function parseEvent(ev) {
+  const c = ev.competitions?.[0];
+  const teams = (c?.competitors || []).map((t) => ({
+    id: t.team?.id,
+    abbr: t.team?.abbreviation,
+    name: t.team?.displayName,
+    short: t.team?.shortDisplayName,
+    score: t.score,
+    winner: t.winner,
+    homeAway: t.homeAway,
+    record: t.records?.[0]?.summary || "",
+    linescores: (t.linescores || []).map((l) => l.value),
+    seed: t.curatedRank?.current || null,
+  }));
+
+  const oddsData = c?.odds?.[0];
+  let odds = null;
+  if (oddsData) {
+    odds = {
+      details: oddsData.details || "",
+      overUnder: oddsData.overUnder,
+      spread: oddsData.spread,
+      overOdds: oddsData.overOdds,
+      underOdds: oddsData.underOdds,
+      awayMLOdds: oddsData.awayTeamOdds?.moneyLine,
+      homeMLOdds: oddsData.homeTeamOdds?.moneyLine,
+      provider: oddsData.provider?.name || "",
+    };
+  }
+
+  // Extract highlights/notes
+  const headline = c?.headlines?.[0]?.shortLinkText || c?.headlines?.[0]?.description || "";
+  const note = c?.notes?.[0]?.headline || "";
+
+  const rawRound = c?.notes?.[0]?.headline || "";
+  const round = rawRound.replace(/^NCAA\s+(?:Men['']s\s+)?(?:Basketball\s+)?Tournament\s*[-–]\s*/i, "");
+
+  const seriesRaw = c?.series;
+  let series = null;
+  if (seriesRaw && seriesRaw.type === "playoff") {
+    const wins = {};
+    (seriesRaw.competitors || []).forEach((x) => {
+      if (x.id != null) wins[x.id] = x.wins || 0;
+    });
+    series = {
+      summary: seriesRaw.summary || "",
+      bestOf: seriesRaw.totalCompetitions || 7,
+      completed: !!seriesRaw.completed,
+      wins,
+      roundAbbr: c?.type?.abbreviation || "",
+      note,
+    };
+  }
+
+  return {
+    id: ev.id,
+    name: ev.name,
+    date: ev.date,
+    detail: c?.status?.type?.shortDetail || "",
+    completed: c?.status?.type?.completed,
+    live: c?.status?.type?.state === "in",
+    notStarted: c?.status?.type?.state === "pre",
+    venue: c?.venue?.fullName || "",
+    teams,
+    odds,
+    round,
+    series,
+    headline: headline || note,
+    leaders: (c?.leaders || []).map((cat) => ({
+      category: cat.name,
+      leaders: (cat.leaders || []).slice(0, 1).map((l) => ({
+        name: l.athlete?.shortName || l.athlete?.displayName,
+        value: l.displayValue,
+      })),
+    })),
+  };
+}
+
 async function fetchScores(league) {
   const daysBack = LEAGUES[league].daysBack ?? 1;
   const daysForward = LEAGUES[league].daysForward ?? 1;
 
   const today = new Date();
-  const formatDate = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}${month}${day}`;
-  };
 
   // Generate array of dates to fetch
   const dates = [];
   for (let i = -daysBack; i <= daysForward; i++) {
     const date = new Date(today);
     date.setDate(date.getDate() + i);
-    dates.push(formatDate(date));
+    dates.push(formatYMD(date));
   }
 
   // Fetch all days in parallel
@@ -141,65 +222,21 @@ async function fetchScores(league) {
   // Combine all events
   const allEvents = responses.flatMap(d => d?.events || []);
 
-  return allEvents.map((ev) => {
-    const c = ev.competitions?.[0];
-    const teams = (c?.competitors || []).map((t) => ({
-      id: t.team?.id,
-      abbr: t.team?.abbreviation,
-      name: t.team?.displayName,
-      short: t.team?.shortDisplayName,
-      score: t.score,
-      winner: t.winner,
-      homeAway: t.homeAway,
-      record: t.records?.[0]?.summary || "",
-      linescores: (t.linescores || []).map((l) => l.value),
-      seed: t.curatedRank?.current || null,
-    }));
+  return allEvents.map(parseEvent);
+}
 
-    const oddsData = c?.odds?.[0];
-    let odds = null;
-    if (oddsData) {
-      odds = {
-        details: oddsData.details || "",
-        overUnder: oddsData.overUnder,
-        spread: oddsData.spread,
-        overOdds: oddsData.overOdds,
-        underOdds: oddsData.underOdds,
-        awayMLOdds: oddsData.awayTeamOdds?.moneyLine,
-        homeMLOdds: oddsData.homeTeamOdds?.moneyLine,
-        provider: oddsData.provider?.name || "",
-      };
-    }
-
-    // Extract highlights/notes
-    const headline = c?.headlines?.[0]?.shortLinkText || c?.headlines?.[0]?.description || "";
-    const note = c?.notes?.[0]?.headline || "";
-
-    const rawRound = c?.notes?.[0]?.headline || "";
-    const round = rawRound.replace(/^NCAA\s+(?:Men['']s\s+)?(?:Basketball\s+)?Tournament\s*[-–]\s*/i, "");
-
-    return {
-      id: ev.id,
-      name: ev.name,
-      date: ev.date,
-      detail: c?.status?.type?.shortDetail || "",
-      completed: c?.status?.type?.completed,
-      live: c?.status?.type?.state === "in",
-      notStarted: c?.status?.type?.state === "pre",
-      venue: c?.venue?.fullName || "",
-      teams,
-      odds,
-      round,
-      headline: headline || note,
-      leaders: (c?.leaders || []).map((cat) => ({
-        category: cat.name,
-        leaders: (cat.leaders || []).slice(0, 1).map((l) => ({
-          name: l.athlete?.shortName || l.athlete?.displayName,
-          value: l.displayValue,
-        })),
-      })),
-    };
-  });
+async function fetchPlayoffs(league) {
+  if (!LEAGUES[league]?.playoffs) return [];
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - 21);
+  const end = new Date(today);
+  end.setDate(end.getDate() + 21);
+  const range = `${formatYMD(start)}-${formatYMD(end)}`;
+  const d = await apiFetch(
+    `${API}/${LEAGUES[league].path}/scoreboard?seasontype=3&limit=300&dates=${range}`
+  );
+  return (d?.events || []).map(parseEvent).filter((g) => g.series);
 }
 
 async function fetchStandings(league) {
@@ -556,6 +593,94 @@ const BRACKET_ROUND_ORDER = [
   "National Championship",
 ];
 
+const SERIES_ROUND_ORDER = ["RD16", "RD8", "RD4", "RD2"];
+
+const SERIES_ROUND_NAMES = {
+  nba: {
+    RD16: "First Round",
+    RD8: "Conference Semifinals",
+    RD4: "Conference Finals",
+    RD2: "NBA Finals",
+  },
+  nhl: {
+    RD16: "First Round",
+    RD8: "Second Round",
+    RD4: "Conference Finals",
+    RD2: "Stanley Cup Final",
+  },
+};
+
+function seriesRoundLabel(league, abbr) {
+  return SERIES_ROUND_NAMES[league]?.[abbr] || abbr || "Playoffs";
+}
+
+function seriesConference(note) {
+  const m = /^(east|west|eastern|western)/i.exec(note || "");
+  if (!m) return null;
+  return m[1].toLowerCase().startsWith("east") ? "East" : "West";
+}
+
+function seriesGameNumber(game) {
+  const m = /Game\s+(\d+)/i.exec(game?.round || "");
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function buildSeries(games) {
+  const byKey = {};
+  games.forEach((g) => {
+    if (!g.series) return;
+    const ids = g.teams.map((t) => t.id).filter(Boolean);
+    if (ids.length !== 2) return;
+    const sorted = [...ids].sort();
+    const key = `${g.series.roundAbbr}:${sorted.join("-")}`;
+    if (!byKey[key]) {
+      const [aId, bId] = sorted;
+      const teamA = g.teams.find((t) => t.id === aId);
+      const teamB = g.teams.find((t) => t.id === bId);
+      byKey[key] = {
+        id: key,
+        roundAbbr: g.series.roundAbbr,
+        conference: seriesConference(g.series.note),
+        bestOf: g.series.bestOf,
+        completed: g.series.completed,
+        summary: g.series.summary,
+        teamA: {
+          id: aId,
+          abbr: teamA?.abbr,
+          name: teamA?.name,
+          short: teamA?.short,
+          wins: g.series.wins[aId] || 0,
+        },
+        teamB: {
+          id: bId,
+          abbr: teamB?.abbr,
+          name: teamB?.name,
+          short: teamB?.short,
+          wins: g.series.wins[bId] || 0,
+        },
+        games: [],
+      };
+    }
+    const s = byKey[key];
+    if (g.series.summary) s.summary = g.series.summary;
+    s.completed = s.completed || g.series.completed;
+    s.teamA.wins = Math.max(s.teamA.wins, g.series.wins[s.teamA.id] || 0);
+    s.teamB.wins = Math.max(s.teamB.wins, g.series.wins[s.teamB.id] || 0);
+    if (!s.conference) s.conference = seriesConference(g.series.note);
+    s.games.push(g);
+  });
+  return Object.values(byKey).map((s) => {
+    s.games.sort((x, y) => new Date(x.date) - new Date(y.date));
+    const past = s.games.filter((g) => g.completed);
+    const live = s.games.find((g) => g.live);
+    const upcoming = s.games.filter((g) => !g.completed && !g.live);
+    const realNext = upcoming.find((g) => !/if necessary/i.test(g.round || ""));
+    s.lastGame = past[past.length - 1] || null;
+    s.nextGame = live || realNext || upcoming[0] || null;
+    return s;
+  });
+}
+
 function BracketView({ games, league, favorites }) {
   const favIds = favorites
     .filter((f) => f.startsWith(league + ":"))
@@ -637,7 +762,134 @@ function BracketView({ games, league, favorites }) {
   );
 }
 
-function LeagueSection({ league, scores, standings, favorites }) {
+function SeriesCard({ series: s, league, isFav }) {
+  const leaderId =
+    s.teamA.wins > s.teamB.wins
+      ? s.teamA.id
+      : s.teamB.wins > s.teamA.wins
+      ? s.teamB.id
+      : null;
+
+  const fmtTime = (iso) =>
+    new Date(iso).toLocaleString("en-US", {
+      weekday: "short",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+  const lg = s.lastGame;
+  const ng = s.nextGame;
+
+  let lastLine = null;
+  if (lg) {
+    const winT = lg.teams.find((t) => t.winner);
+    const loseT = lg.teams.find((t) => !t.winner);
+    const gn = seriesGameNumber(lg);
+    if (winT && loseT) {
+      lastLine = `${gn ? `G${gn} · ` : ""}${winT.abbr} ${winT.score}–${loseT.score} ${loseT.abbr}`;
+    }
+  }
+
+  let nextLine = null;
+  let nextLabel = "NEXT";
+  if (ng && !s.completed) {
+    const gn = seriesGameNumber(ng);
+    if (ng.live) {
+      nextLabel = "LIVE";
+      nextLine = `${gn ? `G${gn} · ` : ""}${ng.detail}`;
+    } else {
+      const ifNec = /if necessary/i.test(ng.round || "");
+      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}`;
+    }
+  }
+
+  return (
+    <div
+      className={`series-card${isFav ? " series-fav" : ""}${s.completed ? " series-done" : ""}${ng && ng.live ? " series-live" : ""}`}
+    >
+      {s.conference && <div className="series-conf">{s.conference.toUpperCase()}</div>}
+      {[s.teamA, s.teamB].map((t) => (
+        <div
+          key={t.id}
+          className={`series-row${leaderId === t.id ? " series-lead" : ""}${s.completed && leaderId === t.id ? " series-winner" : ""}`}
+        >
+          <span className="series-abbr">{t.abbr}</span>
+          <span className="series-name">{t.short || t.name}</span>
+          <span className="series-wins">{t.wins}</span>
+        </div>
+      ))}
+      <div className="series-summary">
+        {s.summary || `Best of ${s.bestOf}`}
+      </div>
+      {lastLine && (
+        <div className="series-meta">
+          <span className="series-meta-lbl">LAST</span>
+          <span>{lastLine}</span>
+        </div>
+      )}
+      {nextLine && (
+        <div className="series-meta">
+          <span className="series-meta-lbl">{nextLabel}</span>
+          <span>{nextLine}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SeriesView({ series, league, favorites }) {
+  const favIds = favorites
+    .filter((f) => f.startsWith(league + ":"))
+    .map((f) => f.split(":")[1]);
+
+  const byRound = {};
+  series.forEach((s) => {
+    if (!byRound[s.roundAbbr]) byRound[s.roundAbbr] = [];
+    byRound[s.roundAbbr].push(s);
+  });
+
+  const rounds = SERIES_ROUND_ORDER.filter((r) => byRound[r]);
+
+  return (
+    <div>
+      {rounds.map((roundAbbr) => {
+        const list = byRound[roundAbbr].slice().sort((a, b) => {
+          if (a.conference !== b.conference) {
+            if (a.conference === "East") return -1;
+            if (b.conference === "East") return 1;
+          }
+          return (b.teamA.wins + b.teamB.wins) - (a.teamA.wins + a.teamB.wins)
+            || (a.teamA.abbr || "").localeCompare(b.teamA.abbr || "");
+        });
+        return (
+          <div key={roundAbbr} className="series-round">
+            <h4 className="bracket-round-name">
+              {seriesRoundLabel(league, roundAbbr).toUpperCase()}
+            </h4>
+            <div className="series-grid">
+              {list.map((s) => {
+                const isFav =
+                  favIds.includes(s.teamA.id) || favIds.includes(s.teamB.id);
+                return (
+                  <SeriesCard
+                    key={s.id}
+                    series={s}
+                    league={league}
+                    isFav={isFav}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LeagueSection({ league, scores, standings, playoffs, favorites }) {
   const favIds = favorites
     .filter((f) => f.startsWith(league + ":"))
     .map((f) => f.split(":")[1]);
@@ -753,6 +1005,16 @@ function LeagueSection({ league, scores, standings, favorites }) {
         </h2>
         <div className="lg-rule" />
       </div>
+      {playoffs && playoffs.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <h3 className="sec-label">PLAYOFFS</h3>
+          <SeriesView
+            series={buildSeries(playoffs)}
+            league={league}
+            favorites={favorites}
+          />
+        </div>
+      )}
       {scores.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
           {league === 'ncaam' ? (() => {
@@ -1007,6 +1269,80 @@ const CSS = `
     display: inline-block;
   }
 
+  /* ── Playoff Series ── */
+  .series-round { margin-bottom: 18px; }
+  .series-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .series-card {
+    border: 1px solid var(--faint);
+    padding: 10px 12px 8px;
+    background: #fff;
+    position: relative;
+  }
+  .series-fav {
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+  }
+  .series-live { border-left: 4px solid var(--accent); }
+  .series-done { background: var(--bg-alt); }
+  .series-conf {
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    font: 9px var(--mono);
+    letter-spacing: 0.14em;
+    color: var(--mid);
+  }
+  .series-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 14px;
+  }
+  .series-lead .series-abbr,
+  .series-lead .series-wins { font-weight: 900; }
+  .series-lead .series-name { font-weight: 600; }
+  .series-winner .series-abbr,
+  .series-winner .series-name,
+  .series-winner .series-wins { color: var(--accent); }
+  .series-abbr { font: 600 12px var(--mono); width: 40px; }
+  .series-name { flex: 1; }
+  .series-wins {
+    font: 700 18px var(--mono);
+    min-width: 22px;
+    text-align: right;
+  }
+  .series-summary {
+    font: 10px var(--mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--faint);
+  }
+  .series-done .series-summary { color: var(--ink); font-weight: 600; }
+  .series-meta {
+    display: flex;
+    gap: 8px;
+    font: 10px var(--mono);
+    color: var(--mid);
+    margin-top: 3px;
+    letter-spacing: 0.03em;
+  }
+  .series-meta-lbl {
+    letter-spacing: 0.12em;
+    color: var(--ink);
+    font-weight: 600;
+    min-width: 30px;
+  }
+
   /* ── Score Cards ── */
   .scores-grid {
     display: grid;
@@ -1166,6 +1502,11 @@ const CSS = `
     .scores-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
     .fav-grid { grid-template-columns: repeat(2, 1fr); }
 
+    /* Series cards */
+    .series-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .series-card { break-inside: avoid; padding: 6px 8px; }
+    .series-round { margin-bottom: 10px; }
+
     /* Standings */
     .st-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .st-table { font-size: 9px; }
@@ -1183,7 +1524,7 @@ const CSS = `
   @media (max-width: 600px) {
     .app { padding: 12px; }
     .mast { font-size: 32px; }
-    .scores-grid, .fav-grid { grid-template-columns: 1fr; }
+    .scores-grid, .fav-grid, .series-grid { grid-template-columns: 1fr; }
     .st-grid { grid-template-columns: 1fr; }
     .picker { padding: 16px; }
     .picker-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
@@ -1197,6 +1538,7 @@ const CSS = `
 export default function App() {
   const [scores, setScores] = useState({});
   const [standings, setStandings] = useState({});
+  const [playoffs, setPlayoffs] = useState({});
   const [allTeams, setAllTeams] = useState({});
   const [favorites, setFavorites] = useState(
     () => URL_PARAMS.favs || store.get("fav_teams") || []
@@ -1233,21 +1575,27 @@ export default function App() {
   const loadData = useCallback(async () => {
     setLoading(true);
     const keys = Object.keys(LEAGUES);
-    const [sc, st, tm] = await Promise.all([
+    const [sc, st, tm, po] = await Promise.all([
       Promise.all(keys.map(async (lg) => [lg, await fetchScores(lg)])),
       Promise.all(keys.map(async (lg) => [lg, LEAGUES[lg].noStandings ? [] : await fetchStandings(lg)])),
       Promise.all(keys.map(async (lg) => [lg, await fetchTeams(lg)])),
+      Promise.all(keys.map(async (lg) => [lg, LEAGUES[lg].playoffs ? await fetchPlayoffs(lg) : []])),
     ]);
     const scoreMap = Object.fromEntries(sc);
+    const playoffMap = Object.fromEntries(po);
     setScores(scoreMap);
     setStandings(Object.fromEntries(st));
     setAllTeams(Object.fromEntries(tm));
+    setPlayoffs(playoffMap);
     setLoading(false);
     setLastRefresh(new Date());
 
-    // Auto-select only leagues with games when no user preference is stored
+    // Auto-select only leagues with games when no user preference is stored.
+    // Playoff series count as activity even if no games are scheduled in the scoreboard window.
     if (!userHasSetLeagues.current) {
-      const leaguesWithGames = keys.filter((lg) => (scoreMap[lg] || []).length > 0);
+      const leaguesWithGames = keys.filter(
+        (lg) => (scoreMap[lg] || []).length > 0 || (playoffMap[lg] || []).length > 0
+      );
       setActiveLeagues(leaguesWithGames.length > 0 ? leaguesWithGames : keys);
     }
 
@@ -1311,6 +1659,7 @@ export default function App() {
                 league={lg}
                 scores={scores[lg] || []}
                 standings={standings[lg] || []}
+                playoffs={playoffs[lg] || []}
                 favorites={favorites}
               />
             ))
