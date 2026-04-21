@@ -1669,7 +1669,8 @@ export default function App() {
           The Sports Bugle · {dateStr} · Data via ESPN · {" "}
           {headless
             ? "Generated automatically"
-            : "Auto-refreshes every 5 minutes"}
+            : "Auto-refreshes every 5 minutes"}{" "}
+          · v{__APP_VERSION__}
           {!headless && (
             <div className="footer-reset no-print">
               <button
