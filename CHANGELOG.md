@@ -1,0 +1,23 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0] - 2026-04-21
+
+### Added
+- Multi-sport scoreboard dashboard (NBA, NFL, MLB, NHL, NCAA Men's Basketball, EPL)
+- Playoff series view for NBA and NHL
+- NCAA Men's Basketball Tournament bracket view with full 64-team display
+- Favorite teams filtering with localStorage persistence
+- Active-games-only league filtering by default
+- Auto-refreshing data every 5 minutes via ESPN API
+- Print-optimized layout
+- Standings tables per league with EPL draw/MP columns
+- League logo display with sport branding
+- Headless/automated generation mode
+- Reset preferences button in footer
