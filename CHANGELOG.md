@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Live playoff series cards now show the current score alongside the game clock instead of the clock alone
+
 ## [1.0.0] - 2026-04-21
 
 ### Added
