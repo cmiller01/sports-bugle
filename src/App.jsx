@@ -798,7 +798,12 @@ function SeriesCard({ series: s, league, isFav }) {
     const gn = seriesGameNumber(ng);
     if (ng.live) {
       nextLabel = "LIVE";
-      nextLine = `${gn ? `G${gn} · ` : ""}${ng.detail}`;
+      const [t1, t2] = ng.teams;
+      const scoreStr =
+        t1 && t2 && t1.score != null && t2.score != null
+          ? `${t1.abbr} ${t1.score}–${t2.score} ${t2.abbr} · `
+          : "";
+      nextLine = `${gn ? `G${gn} · ` : ""}${scoreStr}${ng.detail}`;
     } else {
       const ifNec = /if necessary/i.test(ng.round || "");
       nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}`;
