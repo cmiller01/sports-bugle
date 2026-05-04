@@ -229,12 +229,12 @@ async function fetchPlayoffs(league) {
   if (!LEAGUES[league]?.playoffs) return [];
   const today = new Date();
   const start = new Date(today);
-  start.setDate(start.getDate() - 21);
+  start.setDate(start.getDate() - 30);
   const end = new Date(today);
-  end.setDate(end.getDate() + 21);
+  end.setDate(end.getDate() + 60);
   const range = `${formatYMD(start)}-${formatYMD(end)}`;
   const d = await apiFetch(
-    `${API}/${LEAGUES[league].path}/scoreboard?seasontype=3&limit=300&dates=${range}`
+    `${API}/${LEAGUES[league].path}/scoreboard?seasontype=3&limit=500&dates=${range}`
   );
   return (d?.events || []).map(parseEvent).filter((g) => g.series);
 }
