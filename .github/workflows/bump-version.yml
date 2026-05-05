@@ -12,21 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Bump minor version
         id: bump
@@ -38,27 +33,53 @@ jobs:
           echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Update CHANGELOG.md
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new }}
+          OLD_VERSION: ${{ steps.bump.outputs.old }}
         run: |
-          NEW_VERSION="${{ steps.bump.outputs.new }}"
-          OLD_VERSION="${{ steps.bump.outputs.old }}"
-          DATE=$(date -u +%Y-%m-%d)
+          export DATE=$(date -u +%Y-%m-%d)
 
-          # Gather commits since the previous version tag (or all commits if no tag)
+          # Write commits to a file to safely handle special characters
           if git rev-list "v${OLD_VERSION}" > /dev/null 2>&1; then
-            COMMITS=$(git log "v${OLD_VERSION}..HEAD~1" --pretty=format:"- %s" --no-merges)
+            git log "v${OLD_VERSION}..HEAD" --pretty=format:"- %s" --no-merges > /tmp/commits.txt
           else
-            COMMITS=$(git log HEAD~1 --pretty=format:"- %s" --no-merges | head -20)
+            git log HEAD --pretty=format:"- %s" --no-merges | head -20 > /tmp/commits.txt
           fi
 
-          # Build the new changelog entry
-          ENTRY="## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n${COMMITS}\n"
+          python3 - <<'PYEOF'
+import os
 
-          # Insert after the [Unreleased] line
-          sed -i "s|## \[Unreleased\]|## [Unreleased]\n\n${ENTRY}|" CHANGELOG.md
+new_version = os.environ['NEW_VERSION']
+date = os.environ['DATE']
 
-      - name: Commit and push
-        run: |
-          git add package.json CHANGELOG.md
-          git commit -m "chore: bump version to v${{ steps.bump.outputs.new }}"
-          git tag "v${{ steps.bump.outputs.new }}"
-          git push origin main --follow-tags
+with open('/tmp/commits.txt') as f:
+    commits = f.read().strip()
+
+with open('CHANGELOG.md') as f:
+    content = f.read()
+
+entry = f"## [{new_version}] - {date}\n\n### Changed\n{commits}\n\n"
+content = content.replace('## [Unreleased]\n', f'## [Unreleased]\n\n{entry}', 1)
+
+with open('CHANGELOG.md', 'w') as f:
+    f.write(content)
+PYEOF
+
+      - name: Open version bump PR
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump version to v${{ steps.bump.outputs.new }}"
+          branch: chore/bump-version
+          delete-branch: true
+          title: "chore: bump version to v${{ steps.bump.outputs.new }}"
+          body: Automated minor version bump to v${{ steps.bump.outputs.new }}.
+          labels: automated
+
+      - name: Auto-merge version bump PR
+        if: steps.cpr.outputs.pull-request-operation == 'created'
+        continue-on-error: true
+        run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-url }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
