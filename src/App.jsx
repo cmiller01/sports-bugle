@@ -229,12 +229,12 @@ async function fetchPlayoffs(league) {
   if (!LEAGUES[league]?.playoffs) return [];
   const today = new Date();
   const start = new Date(today);
-  start.setDate(start.getDate() - 21);
+  start.setDate(start.getDate() - 30);
   const end = new Date(today);
-  end.setDate(end.getDate() + 21);
+  end.setDate(end.getDate() + 60);
   const range = `${formatYMD(start)}-${formatYMD(end)}`;
   const d = await apiFetch(
-    `${API}/${LEAGUES[league].path}/scoreboard?seasontype=3&limit=300&dates=${range}`
+    `${API}/${LEAGUES[league].path}/scoreboard?seasontype=3&limit=500&dates=${range}`
   );
   return (d?.events || []).map(parseEvent).filter((g) => g.series);
 }
@@ -593,25 +593,31 @@ const BRACKET_ROUND_ORDER = [
   "National Championship",
 ];
 
-const SERIES_ROUND_ORDER = ["RD16", "RD8", "RD4", "RD2"];
-
-const SERIES_ROUND_NAMES = {
-  nba: {
-    RD16: "First Round",
-    RD8: "Conference Semifinals",
-    RD4: "Conference Finals",
-    RD2: "NBA Finals",
-  },
-  nhl: {
-    RD16: "First Round",
-    RD8: "Second Round",
-    RD4: "Conference Finals",
-    RD2: "Stanley Cup Final",
-  },
+// ESPN uses these type abbreviations for playoff rounds (bracket stages):
+//   RD16 = First Round (16 teams), QTR = Quarterfinals (8 teams),
+//   SEMI = Semifinals (4 teams), FINAL = Finals (2 teams)
+const SERIES_ROUNDS = {
+  nba: [
+    { abbr: "RD16", label: "First Round" },
+    { abbr: "QTR",  label: "Conference Semifinals" },
+    { abbr: "SEMI", label: "Conference Finals" },
+    { abbr: "FINAL", label: "NBA Finals" },
+  ],
+  nhl: [
+    { abbr: "RD16", label: "First Round" },
+    { abbr: "QTR",  label: "Second Round" },
+    { abbr: "SEMI", label: "Conference Finals" },
+    { abbr: "FINAL", label: "Stanley Cup Final" },
+  ],
 };
 
+function seriesRoundOrder(league) {
+  return (SERIES_ROUNDS[league] || []).map((r) => r.abbr);
+}
+
 function seriesRoundLabel(league, abbr) {
-  return SERIES_ROUND_NAMES[league]?.[abbr] || abbr || "Playoffs";
+  const round = (SERIES_ROUNDS[league] || []).find((r) => r.abbr === abbr);
+  return round?.label || abbr || "Playoffs";
 }
 
 function seriesConference(note) {
@@ -855,7 +861,7 @@ function SeriesView({ series, league, favorites }) {
     byRound[s.roundAbbr].push(s);
   });
 
-  const rounds = SERIES_ROUND_ORDER.filter((r) => byRound[r]);
+  const rounds = seriesRoundOrder(league).filter((r) => byRound[r]);
 
   return (
     <div>
