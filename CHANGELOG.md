@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- TV network indicator (e.g. ESPN, ABC, AMZN) shown as a badge next to the game time on upcoming and live score cards
+- TV network indicator (e.g. ESPN, ABC, AMZN) shown on upcoming and live games — as a badge on regular score cards and appended to the NEXT/LIVE lines on playoff series cards
 - Playoff series cards now show the home team location for the next scheduled game (e.g. `@ CLE`)
 
 ### Fixed
