@@ -825,7 +825,9 @@ function SeriesCard({ series: s, league, isFav }) {
       nextLine = `${gn ? `G${gn} · ` : ""}${scoreStr}${ng.detail}`;
     } else {
       const ifNec = /if necessary/i.test(ng.round || "");
-      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}`;
+      const homeTeam = ng.teams.find((t) => t.homeAway === "home");
+      const atStr = homeTeam ? ` · @ ${homeTeam.abbr}` : "";
+      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}${atStr}`;
     }
   }
 
