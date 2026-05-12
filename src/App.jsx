@@ -152,6 +152,15 @@ function parseEvent(ev) {
     };
   }
 
+  // Extract TV broadcast network
+  const geoBroadcasts = c?.geoBroadcasts || [];
+  const broadcasts = c?.broadcasts || [];
+  const network =
+    geoBroadcasts.find((b) => b.type?.shortName === "TV")?.media?.shortName ||
+    geoBroadcasts[0]?.media?.shortName ||
+    broadcasts[0]?.names?.[0] ||
+    "";
+
   // Extract highlights/notes
   const headline = c?.headlines?.[0]?.shortLinkText || c?.headlines?.[0]?.description || "";
   const note = c?.notes?.[0]?.headline || "";
@@ -185,6 +194,7 @@ function parseEvent(ev) {
     live: c?.status?.type?.state === "in",
     notStarted: c?.status?.type?.state === "pre",
     venue: c?.venue?.fullName || "",
+    network,
     teams,
     odds,
     round,
@@ -499,6 +509,9 @@ function ScoreCard({ game, league, isFav, showDate = true }) {
           : game.live
           ? game.detail
           : timeStr}
+        {!game.completed && game.network && (
+          <span className="sc-network">{game.network}</span>
+        )}
       </div>
       {oddsLine && <div className="sc-odds">{oddsLine}</div>}
       {isFav && game.venue && <div className="sc-venue">{game.venue}</div>}
@@ -802,6 +815,7 @@ function SeriesCard({ series: s, league, isFav }) {
   let nextLabel = "NEXT";
   if (ng && !s.completed) {
     const gn = seriesGameNumber(ng);
+    const netStr = ng.network ? ` · ${ng.network}` : "";
     if (ng.live) {
       nextLabel = "LIVE";
       const [t1, t2] = ng.teams;
@@ -809,10 +823,12 @@ function SeriesCard({ series: s, league, isFav }) {
         t1 && t2 && t1.score != null && t2.score != null
           ? `${t1.abbr} ${t1.score}–${t2.score} ${t2.abbr} · `
           : "";
-      nextLine = `${gn ? `G${gn} · ` : ""}${scoreStr}${ng.detail}`;
+      nextLine = `${gn ? `G${gn} · ` : ""}${scoreStr}${ng.detail}${netStr}`;
     } else {
       const ifNec = /if necessary/i.test(ng.round || "");
-      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}`;
+      const homeTeam = ng.teams.find((t) => t.homeAway === "home");
+      const atStr = homeTeam ? ` · @ ${homeTeam.abbr}` : "";
+      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}${atStr}${netStr}`;
     }
   }
 
@@ -1400,7 +1416,8 @@ const CSS = `
   .sc-rec { font: 10px var(--mono); color: var(--mid); }
   .sc-ml { font: 10px var(--mono); color: var(--mid); min-width: 38px; text-align: right; }
   .sc-score { font: 15px var(--mono); width: 32px; text-align: right; }
-  .sc-status { font: 10px var(--mono); color: var(--mid); letter-spacing: 0.08em; text-transform: uppercase; }
+  .sc-status { font: 10px var(--mono); color: var(--mid); letter-spacing: 0.08em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  .sc-network { font: 8px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--mid); padding: 1px 5px; flex-shrink: 0; }
   .sc-odds { font: 10px var(--mono); color: var(--accent); margin-top: 2px; letter-spacing: 0.03em; }
   .sc-venue { font: 9px var(--mono); color: var(--mid); margin-top: 3px; letter-spacing: 0.03em; }
   .sc-headline { font: 11px var(--body); color: var(--ink); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--faint); font-style: italic; line-height: 1.3; }
