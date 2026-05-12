@@ -815,6 +815,7 @@ function SeriesCard({ series: s, league, isFav }) {
   let nextLabel = "NEXT";
   if (ng && !s.completed) {
     const gn = seriesGameNumber(ng);
+    const netStr = ng.network ? ` · ${ng.network}` : "";
     if (ng.live) {
       nextLabel = "LIVE";
       const [t1, t2] = ng.teams;
@@ -822,12 +823,12 @@ function SeriesCard({ series: s, league, isFav }) {
         t1 && t2 && t1.score != null && t2.score != null
           ? `${t1.abbr} ${t1.score}–${t2.score} ${t2.abbr} · `
           : "";
-      nextLine = `${gn ? `G${gn} · ` : ""}${scoreStr}${ng.detail}`;
+      nextLine = `${gn ? `G${gn} · ` : ""}${scoreStr}${ng.detail}${netStr}`;
     } else {
       const ifNec = /if necessary/i.test(ng.round || "");
       const homeTeam = ng.teams.find((t) => t.homeAway === "home");
       const atStr = homeTeam ? ` · @ ${homeTeam.abbr}` : "";
-      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}${atStr}`;
+      nextLine = `${gn ? `G${gn}${ifNec ? "*" : ""} · ` : ""}${fmtTime(ng.date)}${atStr}${netStr}`;
     }
   }
 
