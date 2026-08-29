@@ -161,6 +161,18 @@ function parseEvent(ev) {
     broadcasts[0]?.names?.[0] ||
     "";
 
+  // Extract goal scorers (soccer)
+  const scorers = (c?.details || [])
+    .filter((d) => d.scoringPlay && !d.shootout)
+    .map((d) => ({
+      teamId: d.team?.id,
+      name: d.athletesInvolved?.[0]?.shortName || d.athletesInvolved?.[0]?.displayName || "",
+      minute: d.clock?.displayValue || "",
+      ownGoal: !!d.ownGoal,
+      penalty: !!d.penaltyKick,
+    }))
+    .filter((s) => s.name);
+
   // Extract highlights/notes
   const headline = c?.headlines?.[0]?.shortLinkText || c?.headlines?.[0]?.description || "";
   const note = c?.notes?.[0]?.headline || "";
@@ -200,6 +212,7 @@ function parseEvent(ev) {
     round,
     series,
     headline: headline || note,
+    scorers,
     leaders: (c?.leaders || []).map((cat) => ({
       category: cat.name,
       leaders: (cat.leaders || []).slice(0, 1).map((l) => ({
@@ -359,6 +372,22 @@ function formatMoneyLine(odds) {
   return parts;
 }
 
+function formatScorers(scorers, teamId) {
+  const teamScorers = (scorers || []).filter((s) => s.teamId === teamId);
+  if (!teamScorers.length) return null;
+  const byPlayer = [];
+  teamScorers.forEach((s) => {
+    const suffix = s.ownGoal ? " (OG)" : s.penalty ? " (P)" : "";
+    let entry = byPlayer.find((e) => e.name === s.name && e.suffix === suffix);
+    if (!entry) {
+      entry = { name: s.name, suffix, minutes: [] };
+      byPlayer.push(entry);
+    }
+    entry.minutes.push(s.minute);
+  });
+  return byPlayer.map((e) => `${e.name} ${e.minutes.join(", ")}${e.suffix}`).join("  ·  ");
+}
+
 /* ═══════════════════════════════════════════
    COMPONENTS
    ═══════════════════════════════════════════ */
@@ -514,6 +543,19 @@ function ScoreCard({ game, league, isFav, showDate = true }) {
         )}
       </div>
       {oddsLine && <div className="sc-odds">{oddsLine}</div>}
+      {league === "epl" && game.scorers && game.scorers.length > 0 && (
+        <div className="sc-scorers">
+          {[away, home].map((t) => {
+            const line = formatScorers(game.scorers, t.id);
+            return line ? (
+              <div key={t.id} className="sc-scorers-row">
+                <span className="sc-scorers-abbr">{t.abbr}</span>
+                <span>{line}</span>
+              </div>
+            ) : null;
+          })}
+        </div>
+      )}
       {isFav && game.venue && <div className="sc-venue">{game.venue}</div>}
       {game.headline && <div className="sc-headline">{game.headline}</div>}
       {showBox && (
@@ -1419,6 +1461,9 @@ const CSS = `
   .sc-status { font: 10px var(--mono); color: var(--mid); letter-spacing: 0.08em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
   .sc-network { font: 8px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--mid); padding: 1px 5px; flex-shrink: 0; }
   .sc-odds { font: 10px var(--mono); color: var(--accent); margin-top: 2px; letter-spacing: 0.03em; }
+  .sc-scorers { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--faint); font: 10px var(--mono); }
+  .sc-scorers-row { display: flex; gap: 6px; padding: 1px 0; color: var(--ink); }
+  .sc-scorers-abbr { font-weight: 700; flex-shrink: 0; }
   .sc-venue { font: 9px var(--mono); color: var(--mid); margin-top: 3px; letter-spacing: 0.03em; }
   .sc-headline { font: 11px var(--body); color: var(--ink); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--faint); font-style: italic; line-height: 1.3; }
 
